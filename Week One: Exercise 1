@@ -1,0 +1,66 @@
+WITH starting_customer_data AS (
+   SELECT 
+   ca.customer_id
+ , cd.last_name
+ , cd.first_name
+ , cd.email
+ , trim(upper(ca.customer_city)) AS customer_city
+ , trim(upper(ca.customer_state)) AS customer_state
+FROM customers.customer_address ca
+INNER JOIN customers.customer_data cd 
+    ON ca.customer_id = cd.customer_id
+),    
+supplier_data AS (
+ SELECT
+  supplier_id
+, supplier_name
+, trim(upper(supplier_city)) AS supplier_city
+, trim(upper(supplier_state)) AS supplier_state
+FROM suppliers.supplier_info 
+),
+customer_geo AS ( 
+ SELECT
+  scd.*
+, uc.geo_location AS customer_location
+FROM starting_customer_data scd 
+INNER JOIN resources.us_cities uc
+    ON scd.customer_city = uc.city_name 
+    AND scd.customer_state = uc.state_abbr
+),
+supplier_geo AS (
+ SELECT
+  sd.* 
+, uc.geo_location AS supplier_location
+FROM supplier_data sd 
+INNER JOIN resources.us_cities uc
+    ON sd.supplier_city = uc.city_name 
+    AND sd.supplier_state = uc.state_abbr 
+),
+geo_distance AS (
+ SELECT 
+  *
+, (ST_DISTANCE(customer_location, supplier_location) / 1609) AS distance_in_miles
+FROM customer_geo
+CROSS JOIN supplier_geo
+),
+distance_rank AS (
+ SELECT 
+  *
+, RANK() over (partition BY customer_id ORDER BY distance_in_miles) as shipping_distance
+FROM geo_distance 
+)
+ SELECT 
+  customer_id
+, last_name
+, first_name
+, email
+, supplier_id
+, supplier_name
+, ROUND (distance_in_miles) AS distance_in_miles
+FROM distance_rank 
+WHERE 
+  shipping_distance = 1 
+ORDER BY 2, 3
+
+
+
